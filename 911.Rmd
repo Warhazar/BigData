@@ -1,0 +1,211 @@
+---
+title: 'Emergency 911 Calls'
+output: html_document
+---
+
+***
+
+
+```{r setup, include=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(plyr)
+library(dplyr)
+library(ggplot2)
+library(lubridate)
+library(tidyr)
+library(ggmap)
+library(viridis)
+library(plotly)
+```
+
+
+```{r echo=FALSE, warning=FALSE}
+
+mydata <- read.csv("C:/Users/SergeyPC/Desktop/montcoalert/911.csv")
+
+dim(mydata)
+
+str(mydata)
+
+summary(mydata)
+
+```
+
+
+```{r echo=FALSE, warning=FALSE}
+
+mydata$zip <- factor(mydata$zip)
+
+mydata <- mydata[,-9]
+
+mydata$timeStamp <- as.POSIXct(mydata$timeStamp)
+
+mydata$Date <- as.Date(mydata$timeStamp)
+
+mydata <- separate(mydata, col = title, into = c("Type", "SubType"), sep = ":")
+
+mydata$SubType <- gsub(" -", "", mydata$SubType)
+
+```
+
+
+### Creating new variables
+
+```{r echo=FALSE, warning=FALSE}
+
+mydata$Year <- year(mydata$timeStamp)
+mydata$Month <- month(mydata$timeStamp)
+mydata$Day <- day(mydata$timeStamp)
+mydata$Hour <- hour(mydata$timeStamp)
+mydata$Weekday <- weekdays(mydata$timeStamp)
+
+mydata$Year <- factor(mydata$Year)
+mydata$Month <- factor(mydata$Month)
+mydata$Day <- factor(mydata$Day)
+mydata$Hour <- factor(mydata$Hour)
+mydata$Weekday <- factor(mydata$Weekday)
+
+mydata <- mydata[,-7]
+
+```
+
+### Number of calls over the period of time and by type
+
+```{r echo=FALSE, warning=FALSE, fig.width=9, fig.height=5.5}
+
+by_date <- mydata %>% group_by(Date) %>% summarise(Total = n())
+
+head(by_date)
+
+ggplot(by_date, aes(Date, Total)) + geom_line(color = "blue", size = 1)+xlab("Месяц")+ylab("Количество")
+
+by_date_type <- mydata %>% group_by(Date, Type) %>% summarise(Total = n())
+
+by_date_type$Type <- factor(by_date_type$Type)
+
+ggplot(by_date_type, aes(Date, Total)) + geom_line( aes(color = Type), size = 0.6)+xlab("Дата")+ylab("Количество")
+```
+
+
+```{r echo=FALSE, warning=FALSE, fig.width=9, fig.height=5.5}
+
+table(mydata$Year)
+
+table(mydata[mydata$Year]$Month)
+
+table(mydata[mydata$Year]$Month)
+
+ggplot(mydata[mydata$Year==2016,], aes(Month, fill = Month)) + geom_bar() + theme(legend.position = "none") + ggtitle("Вызовы в службу 911 в 2016г по месяцам ")+xlab("Номер месяца")+ylab("Количество")
+
+ggplot(mydata, aes(Hour, fill = Hour)) + geom_bar() + theme(legend.position = "none") + ggtitle("Вызовы в службу 911 в 2016г по часам")+xlab("Часы")+ylab("Количество")
+
+ggplot(mydata, aes(Weekday, fill = Weekday)) + geom_bar() + theme(legend.position = "none") + ggtitle("Вызовы в службу 911 в 2016г по дням недели")+xlab("Дни недели")+ylab("Количество")
+
+```
+
+### How many calls based on type
+
+```{r echo=FALSE, warning=FALSE, fig.width=8, fig.height=5}
+
+table(mydata$Type)
+prop.table(table(mydata$Type))
+
+
+```
+
+### How many calls from each subtypes in overall dataset and also subtypes within each type
+
+```{r echo=FALSE, warning=FALSE, fig.width=10, fig.height=5.5}
+
+top_subtypes <- as.data.frame(table(mydata$SubType))
+top_subtypes <- top_subtypes[order(-top_subtypes$Freq),]
+top10_subtypes <- top_subtypes[1:10,]
+top10_subtypes$Perc <- top10_subtypes$Freq/sum(top_subtypes$Freq) * 100
+top10_subtypes
+
+gettop10subtypes <- function(type) {
+  mytype <- subset(mydata, Type == type)
+  mytype$SubType <- factor(mytype$SubType)
+  mytype_subtypes <- as.data.frame(table(mytype$SubType))
+  mytype_subtypes <- mytype_subtypes[order(-mytype_subtypes$Freq),]
+  top10_types_substype <- mytype_subtypes[1:10,]
+  top10_types_substype$Perc <- top10_types_substype$Freq/sum(mytype_subtypes$Freq) * 100
+  return(top10_types_substype)
+}
+
+gettop10subtypes("EMS")
+
+gettop10subtypes("Fire")
+
+ggplot(gettop10subtypes("Fire"), aes(reorder(Var1, Freq), Freq, fill = Var1)) + geom_bar(stat = "identity") + theme(legend.position = "none") + ggtitle("Звонки в службу 911 с типом 'огонь'") + xlab("Подтип") + ylab("Количество звонков")  + coord_flip()
+
+```
+
+### Which zip codes have the highest number of calls
+
+```{r echo=FALSE, warning=FALSE,fig.width=9, fig.height=5.5}
+
+top_zip <- as.data.frame(table(mydata$zip))
+top_zip <- top_zip[order(-top_zip$Freq),]
+top10_zip <- top_zip[1:10,]
+
+names(top10_zip) <- c("Zip", "Total")
+top10_zip$Perc <- top10_zip$Total/sum(top_zip$Freq) * 100
+top10_zip$Zip <- factor(top10_zip$Zip)
+
+top10_zip
+
+ggplot(top10_zip, aes(reorder(Zip, -Total), Total, fill = Zip)) + geom_bar(stat = "identity") + theme(legend.position = "none") + ggtitle("Топ 10 zip-кодов") + xlab("Zip-код (индекс) откуда поступало наибольшее количество звонков")+ylab("Количество")
+
+```
+
+
+### Which township contributes to majority of the calls
+
+
+```{r echo=FALSE, warning=FALSE, fig.width=9, fig.height=5.5}
+
+length(unique(mydata$twp))
+
+top_twp <- as.data.frame(table(mydata$twp))
+top_twp <- top_twp[order(-top_twp$Freq),]
+top10_twp <- top_twp[1:10,]
+
+names(top10_twp) <- c("Twp", "Total")
+top10_twp$Perc <- top10_twp$Total/sum(top_twp$Freq) * 100
+top10_twp$Twp <- factor(top10_twp$Twp)
+
+top10_twp
+
+ggplot(top10_twp, aes(reorder(Twp, -Total), Total, fill = Twp)) + geom_bar(stat = "identity") + theme(legend.position = "none") + ggtitle("Топ городов с наибольшим количеством звонков") + xlab("Города с наибольшим количеством звонков") + ylab ("Количество")  + theme(axis.text.x=element_text(angle=45,hjust=0.5,vjust=0.5)) 
+
+```
+
+
+```{r echo=FALSE, warning=FALSE, fig.width=9, fig.height=5.5}
+
+
+```
+
+### How does the type vary among top 10 township
+
+```{r echo=FALSE, warning=FALSE, fig.width=9, fig.height=5.5}
+
+ggplot(mydata[mydata$twp %in% top10_twp$Twp, ], aes(twp, fill = Type )) + geom_bar(position = "dodge")  + theme(axis.text.x=element_text(angle=45,hjust=0.5,vjust=0.5))  + xlab("Города") + ggtitle("Топ 10 городов по звонкам в службу 911 с типом")+ylab("Количество")
+
+```
+
+### How does the Top 5 subtypes vary among top 10 twp
+
+```{r echo=FALSE, warning=FALSE, fig.width=9, fig.height=5.5}
+
+top3 <- top10_subtypes[1:5,]$Var1
+
+sample <- mydata[mydata$twp %in% top10_twp$Twp,]
+sample <- sample[sample$SubType %in% top3, ]
+dim(sample)
+
+ggplot(sample, aes(twp, fill = SubType )) + geom_bar(position = "dodge")  + theme(axis.text.x=element_text(angle=45,hjust=0.5,vjust=0.5))  + xlab("Города") + ylab("Количество") + ggtitle("Подтипы звонков совершенных в службу 911 в топ 10 городов")
+
+```
+
